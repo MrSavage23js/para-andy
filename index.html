@@ -132,18 +132,6 @@ body{
 .mute[aria-pressed="true"] .on{display:none}
 .mute[aria-pressed="true"] .off{display:block}
 
-/* Modo sincronizar */
-.sync-next{position:fixed;z-index:4;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);text-align:center;pointer-events:none;
-  font:300 .8rem/1.4 var(--f-ui);letter-spacing:.12em;color:var(--ink-soft);padding-inline:24px}
-.sync-panel{position:fixed;z-index:6;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));
-  display:flex;flex-direction:column;gap:12px;padding:20px;border:1px solid var(--line);border-radius:16px;
-  background:rgba(12,6,18,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
-.sync-panel p{margin:0;font:400 .9rem/1.4 var(--f-ui);color:var(--blush)}
-.sync-panel textarea{width:100%;box-sizing:border-box;font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--blush);
-  background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical;user-select:text;-webkit-user-select:text}
-.sync-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-.sync-actions .btn{padding:12px 20px 12px 24px;font-size:.75rem}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 @media (prefers-reduced-motion: reduce){
   .line.in .ch{animation-duration:.4s;animation-delay:0s}
@@ -182,16 +170,6 @@ body{
   <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/><path d="M3 3l18 18"/></svg>
 </button>
 
-<div class="sync-next" id="syncNext" hidden></div>
-<div class="sync-panel" id="syncPanel" hidden>
-  <p>Copia esto y mándamelo (o pégalo en el archivo en lugar de la lista LYRICS):</p>
-  <label for="syncOut" class="sr">Tiempos de la letra</label>
-  <textarea id="syncOut" readonly rows="10"></textarea>
-  <div class="sync-actions">
-    <button class="btn" id="syncCopy" type="button">Copiar</button>
-    <button class="btn" id="syncClose" type="button">Cerrar</button>
-  </div>
-</div>
 
 <div class="intro" id="intro">
   <p class="eyebrow">13 de noviembre</p>
@@ -266,7 +244,7 @@ const LYRIC_START = BAR;
 const lyricAt = i => Array.isArray(LYRICS[i]) ? LYRICS[i][0] : LYRIC_START + BAR * i;
 const lyricText = i => Array.isArray(LYRICS[i]) ? LYRICS[i][1] : LYRICS[i];
 const FIELD_WAVE = lyricAt(Math.min(FIELD_LINE, LYRICS.length - 1));
-const syncMode = location.hash === '#sync';
+const syncMode = false;
 const FINALE_AT = lyricAt(LYRICS.length - 1) + BAR * 1.4;
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -763,28 +741,9 @@ function frame(now) {
 
 /* ---------- interacción ---------- */
 let planted = 0;
-/* modo sincronizar (#sync): toca en cada verso y copia los tiempos */
-const stamps = [];
-function stamp() {
-  if (!started || li >= LYRICS.length) return;
-  const at = songOn ? song.currentTime : (performance.now() - t0) / 1000;
-  stamps.push([Math.round(at * 10) / 10, lyricText(li)]);
-  showLine(lyricText(li)); li++;
-  $('#syncNext').textContent = li < LYRICS.length ? 'Siguiente: ' + lyricText(li).replace(/\*/g, '') : 'Listo';
-  if (li >= LYRICS.length) {
-    $('#syncOut').value = 'const LYRICS = [\n' + stamps.map(([a, s]) => `  [${a.toFixed(1)}, ${JSON.stringify(s)}]`).join(',\n') + '\n];';
-    setTimeout(() => { $('#syncPanel').hidden = false; }, 1200);
-  }
-}
-if (syncMode) {
-  $('#intro .eyebrow').textContent = 'Modo sincronizar';
-  $('#intro .msg').textContent = 'Toca la pantalla (o la barra espaciadora) justo cuando empiece cada verso. Al final te doy los tiempos para copiar.';
-  addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); stamp(); } });
-}
 
 $('#stage').addEventListener('pointerdown', e => {
   if (!started) return;
-  if (syncMode) { stamp(); return; }
   const t = (performance.now() - t0) / 1000;
   const hz = H * .6;
   const by = Math.max(e.clientY, hz + H * .03);
@@ -817,7 +776,6 @@ $('#start').addEventListener('click', () => {
   $('#mute').hidden = false;
   started = true; planted = 0;
   begin();
-  if (syncMode) { stamps.length = 0; $('#syncNext').hidden = false; $('#syncNext').textContent = 'Siguiente: ' + lyricText(0).replace(/\*/g, ''); }
   try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
 });
 $('#replay').addEventListener('click', e => {
@@ -841,13 +799,6 @@ document.addEventListener('visibilitychange', () => {
     if (actx && started) actx.resume().then(() => { nextT = Math.max(nextT, actx.currentTime + .05); });
   }
 });
-$('#syncCopy').addEventListener('click', () => {
-  const ta = $('#syncOut'), btn = $('#syncCopy');
-  const done = () => { btn.textContent = 'Copiado'; };
-  try { navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); }); } catch (e) { ta.select(); }
-});
-$('#syncClose').addEventListener('click', () => { $('#syncPanel').hidden = true; });
-song.addEventListener('ended', () => { if (syncMode && stamps.length) { $('#syncOut').value = 'const LYRICS = [\n' + stamps.map(([a, s]) => `  [${a.toFixed(1)}, ${JSON.stringify(s)}]`).join(',\n') + '\n];'; $('#syncPanel').hidden = false; } });
 
 addEventListener('resize', resize);
 resize();
